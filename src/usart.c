@@ -314,6 +314,8 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
     if(!priv->tx_dma_pending) {
       //no more data to send
       CBUF_Init(priv->tx_buffer);
+
+      USART_SR(priv->usart) &= ~USART_SR_TC;
       if(priv->den_pin) {
         USART_CR1(priv->usart) |= USART_CR1_TCIE;
       }
