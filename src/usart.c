@@ -232,26 +232,27 @@ static void dma_rx_irq_process(struct usart_drv_s* priv) {
 }
 
 static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
-  cm_disable_interrupts();
-  if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TCIF)) {
-    dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TCIF);
+  CM_ATOMIC_BLOCK()
+  {
+    if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TCIF)) {
+      dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TCIF);
 
-    if(priv->tx_dma_pending) {
-      dma_disable_channel(priv->dma, priv->dma_tx_channel);
-      CBUF_AdvancePopIdxBy(priv->tx_buffer, priv->tx_dma_pending);
-      priv->tx_dma_pending = 0;
-      enqueue_tx_dma(priv);
+      if(priv->tx_dma_pending) {
+        dma_disable_channel(priv->dma, priv->dma_tx_channel);
+        CBUF_AdvancePopIdxBy(priv->tx_buffer, priv->tx_dma_pending);
+        priv->tx_dma_pending = 0;
+        enqueue_tx_dma(priv);
+      }
+
     }
+    if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TEIF)) {
+      asm("bkpt");
+      dma_disable_channel(priv->dma, priv->dma_tx_channel);
+      dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
+      priv->tx_dma_pending = 0;
 
+    }
   }
-  if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TEIF)) {
-    asm("bkpt");
-    dma_disable_channel(priv->dma, priv->dma_tx_channel);
-    dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
-    priv->tx_dma_pending = 0;
-
-  }
-  cm_enable_interrupts();
 }
 
 static void dma_rx_init(struct usart_drv_s* priv)
@@ -311,9 +312,15 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
   if(!priv->tx_dma_pending) {
     priv->tx_dma_pending = CBUF_ContigLen(priv->tx_buffer);
     if(!priv->tx_dma_pending) {
+      //no more data to send
+      CBUF_Init(priv->tx_buffer);
+      if(priv->den_pin) {
+        USART_CR1(priv->usart) |= USART_CR1_TCIE;
+      }
       if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
         USART_CR1(priv->usart) |= USART_CR1_TCIE;
       }
+
     } else {
 
       if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
@@ -325,7 +332,7 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
       
       if(priv->den_pin) {
         gpio_set(priv->den_port, priv->den_pin);
-        USART_CR1(priv->usart) |= USART_CR1_TCIE;
+
       }
 
       dma_enable_channel(priv->dma, priv->dma_tx_channel);
@@ -387,6 +394,7 @@ int usart_putch(struct usart_drv_s* priv, char c) {
 void usart_set_rs485_den_pin(usart_drv* priv, uint32_t port, uint32_t pin) {
     priv->den_port = port;
     priv->den_pin = pin;
+    gpio_clear(port, pin);
 }
 
 bool usart_idle(struct usart_drv_s* priv) {
@@ -405,34 +413,41 @@ bool usart_idle(struct usart_drv_s* priv) {
 static void usart_irq_handler(struct usart_drv_s* priv) {
   uint8_t c;
 
-  uint32_t sr = USART_SR(priv->usart);
-  uint32_t cr1 = USART_CR1(priv->usart);
+  CM_ATOMIC_BLOCK() {
 
-  /* Check if we were called because of TXC. */
-  if (((sr & USART_SR_TC) != 0)) {
-    if(priv->den_pin) {
-        gpio_clear(priv->den_port, priv->den_pin);
-    }
-    /* Disable the TXC interrupt, it's no longer needed. */
-    USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
-    if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
-      USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
-    }
-#ifdef STM32L4
-    USART_ICR(priv->usart) |= USART_ICR_TCCF;
-#endif
-  }
-  if ((sr & USART_SR_IDLE) != 0) {
-    priv->idle_flag = 1;
-    _rx_irq_process(priv);
-#ifdef STM32F1
-    (void)USART_DR(priv->usart);
-#endif
-#ifdef STM32L4
-    USART_ICR(priv->usart) |= USART_ICR_IDLECF;
-#endif
-  }
+    uint32_t sr = USART_SR(priv->usart);
+    uint32_t cr1 = USART_CR1(priv->usart);
 
+    /* Check if we were called because of TXC. */
+    if (((sr & USART_SR_TC) != 0)) {
+      if(priv->den_pin) {
+          gpio_clear(priv->den_port, priv->den_pin);
+      }
+      //gpio_clear(GPIOB, GPIO15);
+      /* Disable the TXC interrupt, it's no longer needed. */
+      USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
+      if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
+        USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
+      }
+  #ifdef STM32F1
+      USART_SR(priv->usart) &= ~USART_SR_TC; //clear the TC bit
+  #endif
+  #ifdef STM32L4
+      USART_ICR(priv->usart) |= USART_ICR_TCCF;
+  #endif
+    }
+
+    if (sr & USART_SR_IDLE) {
+      priv->idle_flag = 1;
+      _rx_irq_process(priv);
+  #ifdef STM32F1
+      (void)USART_DR(priv->usart);
+  #endif
+  #ifdef STM32L4
+      USART_ICR(priv->usart) |= USART_ICR_IDLECF;
+  #endif
+    }
+  }
 }
 
 
