@@ -9,4 +9,4 @@ OBJS += \
 	$(DIR)/src/fix32_div.o \
 	$(DIR)/src/fft.o
 	
-INCS += $(DIR)/include
+INCS += -I$(DIR)/include
