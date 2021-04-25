@@ -214,7 +214,7 @@ public:
   }
 
   explicit constexpr operator float() const {
-    return toFloat();
+    return val / float(N);
   }
 
   explicit constexpr operator int() const {
@@ -369,7 +369,7 @@ using ufix29 = fp<29,uint32_t>;
 using ufix30 = fp<30,uint32_t>;
 using ufix31 = fp<31,uint32_t>;
 
-#if 1
+#if __FPU_USED==1
 using fp_t = float;
 using fp20_t = float;
 using fp29_t = float;
