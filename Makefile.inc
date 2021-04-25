@@ -6,6 +6,7 @@ OBJS += \
 	$(DIR)/src/packet.o \
 	$(DIR)/src/crc.o \
 	$(DIR)/src/i2cbb.o \
-	$(DIR)/src/fix32_div.o 
+	$(DIR)/src/fix32_div.o \
+	$(DIR)/src/fft.o
 	
-	
+INCS += $(DIR)/include
