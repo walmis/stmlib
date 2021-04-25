@@ -151,11 +151,11 @@ public:
   }
 
   constexpr fp& operator*=(const fp& b) {
-    val = (*this * b).val;
+    val = fp(*this * b).val;
     return *this;
   }
   constexpr fp& operator/=(const fp& b) {
-    val = (*this / b).val;
+    val = fp(*this / b).val;
     return *this;
   }
   constexpr fp& operator%=(const fp& b) {
