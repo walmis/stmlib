@@ -32,6 +32,13 @@
 #include <libopencm3/cm3/nvic.h>
 #include <sys/param.h>
 
+//compatibility
+#ifdef USART_ISR
+#define USART_SR USART_ISR
+#define USART_SR_TC USART_ISR_TC
+#define USART_SR_IDLE USART_ISR_IDLE
+#endif
+
 #define USART1_DMA DMA1
 #define USART1_TX_DMAC DMA_CHANNEL4
 #define USART1_RX_DMAC DMA_CHANNEL5
@@ -406,11 +413,6 @@ bool usart_idle(struct usart_drv_s* priv) {
   }
   return flag;
 }
-#ifdef USART_ISR
-#define USART_SR USART_ISR
-#define USART_SR_TC USART_ISR_TC
-#define USART_SR_IDLE USART_ISR_IDLE
-#endif
 
 static void usart_irq_handler(struct usart_drv_s* priv) {
   uint8_t c;
