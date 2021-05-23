@@ -81,6 +81,11 @@ private:
           asm("bkpt");
         }
 #endif
+#if WRITE_SIZE == 2
+        flash_unlock();
+        flash_program_half_word(cache_address, *((uint16_t*)cache_value));
+        flash_lock();
+#endif
         memset(cache_value, 0xFF, WRITE_SIZE);
         cache_address = 0;
         cache_dirty = false;
