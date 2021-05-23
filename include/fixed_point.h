@@ -303,6 +303,17 @@ fp<B> abs(fp<B> a) {
   return a.val < 0 ? -a : a;
 }
 
+template<int B>
+int round(fp<B> a) {
+  int result;
+  if(a.val < 0) {
+    a.val -= 1;
+  } else {
+    a.val += 1;
+  }
+  result = (a.val + a.N/2)/a.N;
+  return result;
+}
 
 using fix1 = fp<1>;
 using fix2 = fp<2>;
