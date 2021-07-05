@@ -37,6 +37,7 @@
 #include <stdint.h>
 
 #include "fft.h"
+#include "fixed_math.h"
 
 static inline int IsPowerOfTwo(int x)
 {
@@ -97,111 +98,113 @@ void brswap(T *a, unsigned n) {
 
 
 void FFT(int NumSamples,
-         bool InverseTransform,
-         FFTReal *RealIn, FFTReal *ImagIn, FFTReal *RealOut, FFTReal *ImagOut)
+    bool InverseTransform,
+    FFTReal *RealIn, FFTReal *ImagIn, FFTReal *RealOut, FFTReal *ImagOut)
 {
-	int NumBits;                 /* Number of bits needed to store indices */
-	int i, j, k, n;
-	int BlockSize, BlockEnd;
-	
-	float angle_numerator = 2.0 * M_PI;
-	float tr, ti;                /* temp real, temp imaginary */
-	
-	if (!IsPowerOfTwo(NumSamples)) {
-		return;
-	}
+  int NumBits;                 /* Number of bits needed to store indices */
+  int i, j, k, n;
+  int BlockSize, BlockEnd;
 
-	if (InverseTransform)
-		angle_numerator = -angle_numerator;
-	
-	NumBits = NumberOfBitsNeeded(NumSamples);
-	
-	/*
-	 **   Do simultaneous data copy and bit-reversal ordering into outputs...
-	 */
+  float angle_numerator = 2.0 * M_PI;
+  float tr, ti;                /* temp real, temp imaginary */
 
-    if(RealOut) {
-        memmove(RealOut, RealIn, NumSamples*sizeof(FFTReal));
-    } else {
-        RealOut = RealIn;
+  if (!IsPowerOfTwo(NumSamples)) {
+    return;
+  }
+
+  if (InverseTransform)
+    angle_numerator = -angle_numerator;
+
+  NumBits = NumberOfBitsNeeded(NumSamples);
+
+  /*
+   **   Do simultaneous data copy and bit-reversal ordering into outputs...
+   */
+
+  if(RealOut) {
+    memmove(RealOut, RealIn, NumSamples*sizeof(FFTReal));
+  } else {
+    RealOut = RealIn;
+  }
+  if(ImagOut) {
+    memmove(ImagOut, ImagIn, NumSamples*sizeof(FFTReal));
+  } else {
+    ImagOut = ImagIn;
+  }
+
+  brswap(RealOut, NumSamples);
+  brswap(ImagOut, NumSamples);
+
+  // for (i = 0; i < NumSamples; i++) {
+  // 	j = ReverseBits(i, NumBits);
+  //     printf("rev a[%d] = a[%d]\n", j, i);
+  // 	RealOut[j] = RealIn[i];
+  // 	ImagOut[j] = (ImagIn == NULL) ? (StorageType)0.0 : ImagIn[i];
+  // }
+
+  /*
+   **   Do the FFT itself...
+   */
+
+  BlockEnd = 1;
+  for (BlockSize = 2; BlockSize <= NumSamples; BlockSize <<= 1) {
+
+    float delta_angle = angle_numerator / (float) BlockSize;
+
+    //float sm2 = sin(-2 * delta_angle);
+    //float sm1 = sin(-delta_angle);
+    //float cm2 = cos(-2 * delta_angle);
+    //float cm1 = cos(-delta_angle);
+    float sm1, cm1, sm2, cm2;
+    sincos(-2 * delta_angle, &sm2, &cm2);
+    sincos(-delta_angle, &sm1, &cm1);
+
+    float w = 2 * cm1;
+    float ar0, ar1, ar2, ai0, ai1, ai2;
+
+    for (i = 0; i < NumSamples; i += BlockSize) {
+      ar2 = cm2;
+      ar1 = cm1;
+
+      ai2 = sm2;
+      ai1 = sm1;
+
+      for (j = i, n = 0; n < BlockEnd; j++, n++) {
+        ar0 = w * ar1 - ar2;
+        ar2 = ar1;
+        ar1 = ar0;
+
+        ai0 = w * ai1 - ai2;
+        ai2 = ai1;
+        ai1 = ai0;
+
+        k = j + BlockEnd;
+        tr = ar0 * RealOut[k] - ai0 * ImagOut[k];
+        ti = ar0 * ImagOut[k] + ai0 * RealOut[k];
+
+        RealOut[k] = RealOut[j] - tr;
+        ImagOut[k] = ImagOut[j] - ti;
+
+        RealOut[j] += tr;
+        ImagOut[j] += ti;
+      }
     }
-    if(ImagOut) {
-        memmove(ImagOut, ImagIn, NumSamples*sizeof(FFTReal));
-    } else {
-        ImagOut = ImagIn;
+
+    BlockEnd = BlockSize;
+  }
+
+  /*
+   **   Need to normalize if inverse transform...
+   */
+
+  if (InverseTransform) {
+    float denom = (float) NumSamples;
+
+    for (i = 0; i < NumSamples; i++) {
+      RealOut[i] /= denom;
+      ImagOut[i] /= denom;
     }
-
-	brswap(RealOut, NumSamples);
-    brswap(ImagOut, NumSamples);
-
-	// for (i = 0; i < NumSamples; i++) {
-	// 	j = ReverseBits(i, NumBits);
-    //     printf("rev a[%d] = a[%d]\n", j, i);
-	// 	RealOut[j] = RealIn[i];
-	// 	ImagOut[j] = (ImagIn == NULL) ? (StorageType)0.0 : ImagIn[i];
-	// }
-	
-	/*
-	 **   Do the FFT itself...
-	 */
-	
-	BlockEnd = 1;
-	for (BlockSize = 2; BlockSize <= NumSamples; BlockSize <<= 1) {
-		
-		float delta_angle = angle_numerator / (float) BlockSize;
-		
-		float sm2 = sin(-2 * delta_angle);
-		float sm1 = sin(-delta_angle);
-		float cm2 = cos(-2 * delta_angle);
-		float cm1 = cos(-delta_angle);
-
-
-		float w = 2 * cm1;
-		float ar0, ar1, ar2, ai0, ai1, ai2;
-		
-		for (i = 0; i < NumSamples; i += BlockSize) {
-			ar2 = cm2;
-			ar1 = cm1;
-			
-			ai2 = sm2;
-			ai1 = sm1;
-			
-			for (j = i, n = 0; n < BlockEnd; j++, n++) {
-				ar0 = w * ar1 - ar2;
-				ar2 = ar1;
-				ar1 = ar0;
-				
-				ai0 = w * ai1 - ai2;
-				ai2 = ai1;
-				ai1 = ai0;
-				
-				k = j + BlockEnd;
-				tr = ar0 * RealOut[k] - ai0 * ImagOut[k];
-				ti = ar0 * ImagOut[k] + ai0 * RealOut[k];
-				
-				RealOut[k] = RealOut[j] - tr;
-				ImagOut[k] = ImagOut[j] - ti;
-				
-				RealOut[j] += tr;
-				ImagOut[j] += ti;
-			}
-		}
-		
-		BlockEnd = BlockSize;
-	}
-	
-	/*
-	 **   Need to normalize if inverse transform...
-	 */
-	
-	if (InverseTransform) {
-		float denom = (float) NumSamples;
-		
-		for (i = 0; i < NumSamples; i++) {
-			RealOut[i] /= denom;
-			ImagOut[i] /= denom;
-		}
-	}
+  }
 }
 
 /*
