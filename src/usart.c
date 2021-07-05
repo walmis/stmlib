@@ -248,12 +248,15 @@ static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
         dma_disable_channel(priv->dma, priv->dma_tx_channel);
         CBUF_AdvancePopIdxBy(priv->tx_buffer, priv->tx_dma_pending);
         priv->tx_dma_pending = 0;
+        if(priv->den_pin) {
+          //clear TC, this prevents a bug for early TC firing
+          USART_SR(priv->usart) &= ~USART_SR_TC;
+        }
         enqueue_tx_dma(priv);
       }
 
     }
     if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TEIF)) {
-      asm("bkpt");
       dma_disable_channel(priv->dma, priv->dma_tx_channel);
       dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
       priv->tx_dma_pending = 0;
