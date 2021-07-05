@@ -37,39 +37,93 @@ namespace filter
  *
  * \ingroup	filter
  */
+
+
 template<typename T, int N>
-class Median
-{
-public:
-    /**
-     * \brief	Constructor
-     *
-     * \param	initialValue	Value will be set for the complete
-     * 							input buffer.
-     */
-    Median(const T& initialValue = 0);
-
-    /// Append new value
-    T push(const T& input);
-
-    /// Get median value
-    const T getValue() const;
+struct median_sort {
+  static void sort(T sorted[]);
 };
 
+template<typename T>
+struct median_sort<T,3> {
+  static void sort(T sorted[]) {
+    _MEDIAN__SORT(sorted[0], sorted[1]);
+    _MEDIAN__SORT(sorted[1], sorted[2]);
+    _MEDIAN__SORT(sorted[0], sorted[1]);
+  }
+};
+template<typename T>
+struct median_sort<T,5> {
+  static void sort(T sorted[]) {
+    _MEDIAN__SORT(sorted[0], sorted[1]);
+    _MEDIAN__SORT(sorted[3], sorted[4]);
+    _MEDIAN__SORT(sorted[0], sorted[3]);
+    _MEDIAN__SORT(sorted[1], sorted[4]);
+    _MEDIAN__SORT(sorted[1], sorted[2]);
+    _MEDIAN__SORT(sorted[2], sorted[3]);
+    _MEDIAN__SORT(sorted[1], sorted[2]);
+  }
+};
+template<typename T>
+struct median_sort<T,7> {
+  static void sort(T sorted[]) {
+    _MEDIAN__SORT(sorted[0], sorted[5]);
+    _MEDIAN__SORT(sorted[0], sorted[3]);
+    _MEDIAN__SORT(sorted[1], sorted[6]);
+    _MEDIAN__SORT(sorted[2], sorted[4]);
+    _MEDIAN__SORT(sorted[0], sorted[1]);
+    _MEDIAN__SORT(sorted[3], sorted[5]);
+    _MEDIAN__SORT(sorted[2], sorted[6]);
+    _MEDIAN__SORT(sorted[2], sorted[3]);
+    _MEDIAN__SORT(sorted[3], sorted[6]);
+    _MEDIAN__SORT(sorted[4], sorted[5]);
+    _MEDIAN__SORT(sorted[1], sorted[4]);
+    _MEDIAN__SORT(sorted[1], sorted[3]);
+    _MEDIAN__SORT(sorted[3], sorted[4]);
+  }
+};
+template<typename T>
+struct median_sort<T,9> {
+  static void sort(T sorted[]) {
+    _MEDIAN__SORT(sorted[1], sorted[2]);
+    _MEDIAN__SORT(sorted[4], sorted[5]);
+    _MEDIAN__SORT(sorted[7], sorted[8]);
+    _MEDIAN__SORT(sorted[0], sorted[1]);
+    _MEDIAN__SORT(sorted[3], sorted[4]);
+    _MEDIAN__SORT(sorted[6], sorted[7]);
+    _MEDIAN__SORT(sorted[1], sorted[2]);
+    _MEDIAN__SORT(sorted[4], sorted[5]);
+    _MEDIAN__SORT(sorted[7], sorted[8]);
+    _MEDIAN__SORT(sorted[0], sorted[3]);
+    _MEDIAN__SORT(sorted[5], sorted[8]);
+    _MEDIAN__SORT(sorted[4], sorted[7]);
+    _MEDIAN__SORT(sorted[3], sorted[6]);
+    _MEDIAN__SORT(sorted[1], sorted[4]);
+    _MEDIAN__SORT(sorted[2], sorted[5]);
+    _MEDIAN__SORT(sorted[4], sorted[7]);
+    _MEDIAN__SORT(sorted[4], sorted[2]);
+    _MEDIAN__SORT(sorted[6], sorted[4]);
+    _MEDIAN__SORT(sorted[4], sorted[2]);
+  }
+};
 
 
 // ----------------------------------------------------------------------------
 
 
-template <typename T>
-class Median<T, 3>
+template <typename T, int N>
+class Median
 {
 public:
     Median(const T& initialValue = 0) {
-        for (uint_fast8_t i = 0; i < 3; ++i) {
-            buffer[i] = initialValue;
-            sorted[i] = initialValue;
-        }
+      reset(initialValue);
+    }
+
+    void reset(const T& initialValue = 0) {
+      for (uint_fast8_t i = 0; i < N; ++i) {
+          buffer[i] = initialValue;
+          sorted[i] = initialValue;
+      }
     }
 
     T operator() (const T& input) {
@@ -78,29 +132,25 @@ public:
 
     T push(const T& input) {
         buffer[index] = input;
-        if (++index >= 3) {
+        if (++index >= N) {
             index = 0;
         }
 
         std::memcpy((void *) sorted, (const void * const) buffer, sizeof(sorted));
-
-        _MEDIAN__SORT(sorted[0], sorted[1]);
-        _MEDIAN__SORT(sorted[1], sorted[2]);
-        _MEDIAN__SORT(sorted[0], sorted[1]);
+        median_sort<T,N>::sort(sorted);
 
         return getValue();
     }
 
 
     const T	getValue() const {
-        return sorted[1];
+        return sorted[N/2];
     }
 
 private:
     uint_fast8_t index;
-    T buffer[3];
-    T sorted[3];
+    T buffer[N];
+    T sorted[N];
 };
 
 }
-
