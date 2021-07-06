@@ -248,10 +248,6 @@ static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
         dma_disable_channel(priv->dma, priv->dma_tx_channel);
         CBUF_AdvancePopIdxBy(priv->tx_buffer, priv->tx_dma_pending);
         priv->tx_dma_pending = 0;
-        if(priv->den_pin) {
-          //clear TC, this prevents a bug for early TC firing
-          USART_SR(priv->usart) &= ~USART_SR_TC;
-        }
         enqueue_tx_dma(priv);
       }
 
@@ -325,16 +321,16 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
       //no more data to send
       CBUF_Init(priv->tx_buffer);
 
-      //USART_SR(priv->usart) &= ~USART_SR_TC;
-      if(priv->den_pin) {
-        USART_CR1(priv->usart) |= USART_CR1_TCIE;
-      }
-      if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
-        USART_CR1(priv->usart) |= USART_CR1_TCIE;
+      if (USART_SR(priv->usart) & USART_SR_TC) {
+        if(priv->den_pin) {
+            gpio_clear(priv->den_port, priv->den_pin);
+        }
+        USART_SR(priv->usart) &= ~USART_SR_TC;
       }
 
     } else {
       USART_SR(priv->usart) &= ~USART_SR_TC;
+      USART_CR1(priv->usart) |= USART_CR1_TCIE;
 
       if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
         USART_CR1(priv->usart) &= ~USART_CR1_RE; //disable receiver
@@ -428,14 +424,17 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
 
     /* Check if we were called because of TXC. */
     if (((sr & USART_SR_TC) != 0)) {
-      if(priv->den_pin) {
-          gpio_clear(priv->den_port, priv->den_pin);
-      }
-      //gpio_clear(GPIOB, GPIO15);
-      /* Disable the TXC interrupt, it's no longer needed. */
-      USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
-      if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
-        USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
+      if(!priv->tx_dma_pending) {
+        if(priv->den_pin) {
+            gpio_clear(priv->den_port, priv->den_pin);
+        }
+        //gpio_clear(GPIOB, GPIO15);
+        /* Disable the TXC interrupt, it's no longer needed. */
+        USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
+
+        if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
+          USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
+        }
       }
   #ifdef STM32F1
       USART_SR(priv->usart) &= ~USART_SR_TC; //clear the TC bit
