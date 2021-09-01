@@ -39,6 +39,7 @@ typedef struct {
 	int bytes_left;
 	unsigned char rx_buffer[BUFFER_LEN];
 	unsigned char tx_buffer[BUFFER_LEN];
+	uint16_t      packet_key;
 } PACKET_STATE_t;
 
 // Private variables
@@ -46,13 +47,17 @@ static PACKET_STATE_t m_handler_states[PACKET_HANDLERS];
 
 // Private functions
 static int try_decode_packet(unsigned char *buffer, unsigned int in_len,
-		void(*process_func)(unsigned char *data, unsigned int len), int *bytes_left);
+		void(*process_func)(unsigned char *data, unsigned int len), int *bytes_left, uint16_t key);
 
 void packet_init(void (*s_func)(unsigned char *data, unsigned int len),
 		void (*p_func)(unsigned char *data, unsigned int len), int handler_num) {
 	memset(&m_handler_states[handler_num], 0, sizeof(PACKET_STATE_t));
 	m_handler_states[handler_num].send_func = s_func;
 	m_handler_states[handler_num].process_func = p_func;
+}
+
+void packet_set_key(uint16_t key, int handler_num) {
+  m_handler_states[handler_num].packet_key = key;
 }
 
 void packet_reset(int handler_num) {
@@ -86,7 +91,7 @@ void packet_send_packet(unsigned char *data, unsigned int len, int handler_num) 
 	memcpy(handler->tx_buffer + b_ind, data, len);
 	b_ind += len;
 
-	unsigned short crc = crc16(data, len);
+	unsigned short crc = crc16(data, len) + handler->packet_key;
 	handler->tx_buffer[b_ind++] = (uint8_t)(crc >> 8);
 	handler->tx_buffer[b_ind++] = (uint8_t)(crc & 0xFF);
 	handler->tx_buffer[b_ind++] = 3;
@@ -149,7 +154,7 @@ void packet_process_byte(uint8_t rx_data, int handler_num) {
 	// until we run out of data.
 	for (;;) {
 		int res = try_decode_packet(handler->rx_buffer + handler->rx_read_ptr,
-				data_len, handler->process_func, &handler->bytes_left);
+				data_len, handler->process_func, &handler->bytes_left, handler->packet_key);
 
 		// More data is needed
 		if (res == -2) {
@@ -195,7 +200,7 @@ void packet_process_byte(uint8_t rx_data, int handler_num) {
  * -2: OK so far, but not enough data
  */
 static int try_decode_packet(unsigned char *buffer, unsigned int in_len,
-		void(*process_func)(unsigned char *data, unsigned int len), int *bytes_left) {
+		void(*process_func)(unsigned char *data, unsigned int len), int *bytes_left, uint16_t key) {
 	*bytes_left = 0;
 
 	if (in_len == 0) {
@@ -272,7 +277,7 @@ static int try_decode_packet(unsigned char *buffer, unsigned int in_len,
 		return -1;
 	}
 
-	unsigned short crc_calc = crc16(buffer + data_start, len);
+	unsigned short crc_calc = crc16(buffer + data_start, len) + key;
 	unsigned short crc_rx = (unsigned short)buffer[data_start + len] << 8
 							| (unsigned short)buffer[data_start + len + 1];
 

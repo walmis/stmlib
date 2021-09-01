@@ -45,6 +45,7 @@ void packet_init(void (*s_func)(unsigned char *data, unsigned int len),
 		void (*p_func)(unsigned char *data, unsigned int len), int handler_num);
 void packet_reset(int handler_num);
 void packet_process_byte(uint8_t rx_data, int handler_num);
+void packet_set_key(uint16_t key, int handler_num);
 void packet_timerfunc(void);
 void packet_send_packet(unsigned char *data, unsigned int len, int handler_num);
 
