@@ -288,6 +288,6 @@ static int try_decode_packet(unsigned char *buffer, unsigned int in_len,
 
 		return len + data_start + 3;
 	} else {
-		return -1;
+		return len + data_start + 3;
 	}
 }
