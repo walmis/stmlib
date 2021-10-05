@@ -315,6 +315,18 @@ int round(fp<B> a) {
   return result;
 }
 
+template<int B>
+int lround(fp<B> a) {
+  int result;
+  if(a.val < 0) {
+    a.val -= 1;
+  } else {
+    a.val += 1;
+  }
+  result = (a.val + a.N/2)/a.N;
+  return result;
+}
+
 using fix1 = fp<1>;
 using fix2 = fp<2>;
 using fix3 = fp<3>;
