@@ -9,7 +9,7 @@
 #define SDA_HIGH() GPIO_BSRR(i2c->port) = i2c->sda
 #define SCL_LOW() GPIO_BRR(i2c->port) = i2c->scl
 #define SCL_HIGH() GPIO_BSRR(i2c->port) = i2c->scl
-#define SDA_READ() (GPIO_IDR(i2c->port) & i2c->sda)
+#define SDA_READ() (!!(GPIO_IDR(i2c->port) & i2c->sda))
 
 #define CPU_MHZ 72
 
@@ -42,7 +42,7 @@ void i2c_bb_setup(const struct i2cbb* i2c){
 	gpio_set_mode(i2c->port, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_OPENDRAIN,
 		      i2c->sda);
-#elif defined(STM32L4)
+#elif defined(STM32L4) || defined(GD32F1X0)
 	gpio_mode_setup(i2c->port, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, i2c->scl);
   gpio_mode_setup(i2c->port, GPIO_MODE_OUTPUT, GPIO_PUPD_PULLUP, i2c->sda);
   gpio_set_output_options(i2c->port, GPIO_OTYPE_OD, GPIO_OSPEED_25MHZ, i2c->sda);

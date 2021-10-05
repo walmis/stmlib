@@ -10,13 +10,13 @@
 #include <libopencm3/cm3/cortex.h>
 #endif
 
-#if defined(STM32F1) || defined(STM32F4)
+#if defined(STM32F0) || defined(STM32F1) || defined(STM32F4) || defined(GD32F1X0)
 #define WRITE_SIZE 2
 #else
 #define WRITE_SIZE 8
 #endif
 
-#if STM32F1
+#if defined(STM32F1) || defined(STM32F0) || defined(GD32F1X0)
 #define FLASH_PAGESIZE 1024
 #elif defined(STM32L4)
 #define FLASH_PAGESIZE 2048
@@ -133,7 +133,7 @@ inline bool flash_is_erased_sector(uint32_t addr) {
 
 #ifdef __arm__
 inline void flash_erase_page_addr(uint32_t addr) {
-#if STM32F1
+#if defined(STM32F1) || defined(GD32F1X0)
   flash_erase_page(addr);
 #elif defined(STM32L4)
 #if IWDG_TIMEOUT_MS

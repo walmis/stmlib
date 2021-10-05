@@ -1,8 +1,6 @@
 /*
- * This file is part of the libopencm3 project.
  *
- * Copyright (C) 2009 Uwe Hermann <uwe@hermann-uwe.de>,
- * Copyright (C) 2011 Piotr Esden-Tempski <piotr@esden.net>
+ * Copyright (C) 2021 Valmantas Paliksa <walmis@gmail.com>
  *
  * This library is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -39,9 +37,28 @@
 #define USART_SR_IDLE USART_ISR_IDLE
 #endif
 
+#if defined(STM32F1)
+#define USART_RDR USART_DR
+#define USART_TDR USART_DR
+#endif
+
+#ifdef GD32F1X0
+#define USART1_DMA              DMA1
+#define USART1_TX_DMAC          DMA_CHANNEL2
+#define USART1_RX_DMAC          DMA_CHANNEL3
+#define USART1_TX_DMAC_NVIC     NVIC_DMA_CHANNEL2_3_IRQ
+#define USART1_RX_DMAC_NVIC     NVIC_DMA_CHANNEL2_3_IRQ
+#define USART1_DMA_RX_ISR       dma_channel2_3_isr
+#define USART1_DMA_TX_ISR       dma_channel2_3_isr
+#else
 #define USART1_DMA DMA1
-#define USART1_TX_DMAC DMA_CHANNEL4
-#define USART1_RX_DMAC DMA_CHANNEL5
+#define USART1_TX_DMAC          DMA_CHANNEL4
+#define USART1_RX_DMAC          DMA_CHANNEL5
+#define USART1_TX_DMAC_NVIC     NVIC_DMA1_CHANNEL4_IRQ
+#define USART1_RX_DMAC_NVIC     NVIC_DMA1_CHANNEL5_IRQ
+#define USART1_DMA_TX_ISR       dma1_channel4_isr
+#define USART1_DMA_RX_ISR       dma1_channel5_isr
+#endif
 
 #define USART2_DMA DMA1
 #define USART2_TX_DMAC DMA_CHANNEL7
@@ -68,19 +85,29 @@ static void usart_irq_handler(struct usart_drv_s* priv);
 
 
 #ifdef USE_USART1
-static struct usart_drv_s* usart1;
+static struct usart_drv_s* _usart1;
 
 void usart1_isr(void) {
-  usart_irq_handler(usart1);
+  usart_irq_handler(_usart1);
 }
+
+#if USART1_RX_ISR == USART1_TX_ISR
+void USART1_DMA_TX_ISR() {
+  dma_tx_complete_irq_process(_usart1);
+  dma_rx_irq_process(_usart1);
+}
+#else
 //rx isr
-void dma1_channel5_isr() {
-  dma_rx_irq_process(usart1);
+void USART1_DMA_RX_ISR() {
+  dma_rx_irq_process(_usart1);
 }
 //tx isr
-void dma1_channel4_isr() {
-  dma_tx_complete_irq_process(usart1);
+void USART1_DMA_TX_ISR() {
+  dma_tx_complete_irq_process(_usart1);
 }
+#endif
+
+
 #endif
 
 #ifdef USE_USART2
@@ -123,7 +150,7 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
   case USART1:
     rcc_periph_clock_enable(RCC_DMA1);
     rcc_periph_clock_enable(RCC_USART1);
-    usart1 = priv;
+    _usart1 = priv;
     priv->usart = USART1;
     priv->dma = USART1_DMA;
     priv->dma_rx_channel = USART1_RX_DMAC;
@@ -173,8 +200,8 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
   switch(priv->usart) {
   case USART1:
     nvic_enable_irq(NVIC_USART1_IRQ);
-    nvic_enable_irq(NVIC_DMA1_CHANNEL5_IRQ);
-    nvic_enable_irq(NVIC_DMA1_CHANNEL4_IRQ);
+    nvic_enable_irq(USART1_TX_DMAC_NVIC);
+    nvic_enable_irq(USART1_RX_DMAC_NVIC);
     break;
 #ifdef USE_USART2
   case USART2:
@@ -228,6 +255,7 @@ static void _rx_irq_process(struct usart_drv_s* priv) {
 }
 
 static void dma_rx_irq_process(struct usart_drv_s* priv) {
+
   if (dma_get_interrupt_flag(priv->dma, priv->dma_rx_channel, DMA_HTIF)) {
     _rx_irq_process(priv);
     dma_clear_interrupt_flags(priv->dma, priv->dma_rx_channel, DMA_HTIF);
@@ -236,6 +264,7 @@ static void dma_rx_irq_process(struct usart_drv_s* priv) {
     _rx_irq_process(priv);
     dma_clear_interrupt_flags(priv->dma, priv->dma_rx_channel, DMA_TCIF);
   }
+
 }
 
 static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
@@ -265,8 +294,8 @@ static void dma_rx_init(struct usart_drv_s* priv)
 {
   /* Reset DMA channel*/
   dma_channel_reset(priv->dma, priv->dma_rx_channel);
-#ifdef STM32F1
-  dma_set_peripheral_address(priv->dma, priv->dma_rx_channel, (uint32_t)&USART_DR(priv->usart));
+#if defined(STM32F1) || defined(GD32F1X0)
+  dma_set_peripheral_address(priv->dma, priv->dma_rx_channel, (uint32_t)&USART_RDR(priv->usart));
 #else
   dma_set_peripheral_address(priv->dma, priv->dma_rx_channel, (uint32_t)&USART_RDR(priv->usart));
   dma_set_channel_request(priv->dma, priv->dma_rx_channel, 2);
@@ -291,8 +320,8 @@ static void dma_rx_init(struct usart_drv_s* priv)
 
 static void dma_tx_init(struct usart_drv_s* priv) {
   dma_channel_reset(priv->dma, priv->dma_tx_channel);
-#ifdef STM32F1
-  dma_set_peripheral_address(priv->dma, priv->dma_tx_channel, (uint32_t)&USART_DR(priv->usart));
+#if defined(STM32F1) || defined(GD32F1X0)
+  dma_set_peripheral_address(priv->dma, priv->dma_tx_channel, (uint32_t)&USART_TDR(priv->usart));
 #else
   dma_set_peripheral_address(priv->dma, priv->dma_tx_channel, (uint32_t)&USART_TDR(priv->usart));
   dma_set_channel_request(priv->dma, priv->dma_tx_channel, 2);
@@ -436,12 +465,12 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
           USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
         }
       }
-  #ifdef STM32F1
+#ifdef STM32F1
       USART_SR(priv->usart) &= ~USART_SR_TC; //clear the TC bit
-  #endif
-  #ifdef STM32L4
+#endif
+#if defined(STM32L4) || defined(GD32F1X0)
       USART_ICR(priv->usart) |= USART_ICR_TCCF;
-  #endif
+#endif
     }
 
     if (sr & USART_SR_IDLE) {
@@ -450,7 +479,7 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
   #ifdef STM32F1
       (void)USART_DR(priv->usart);
   #endif
-  #ifdef STM32L4
+  #if defined(STM32L4) || defined(GD32F1X0)
       USART_ICR(priv->usart) |= USART_ICR_IDLECF;
   #endif
     }
