@@ -16,8 +16,8 @@
 #define DELAY_LOW_US  0.8 //μs
 #define DELAY_HIGH_US 0.45 //μs
 
-#define DELAY_CYCLES_LOW  ((int)(DELAY_LOW_US/(1.0/CPU_MHZ))-14)
-#define DELAY_CYCLES_HIGH ((int)((DELAY_HIGH_US)/(1.0/CPU_MHZ))-14)
+#define DELAY_CYCLES_LOW  ((int)(DELAY_LOW_US/(1.2/CPU_MHZ))-14)
+#define DELAY_CYCLES_HIGH ((int)((DELAY_HIGH_US)/(1.2/CPU_MHZ))-14)
 
 #undef CM_ATOMIC_BLOCK
 #define CM_ATOMIC_BLOCK()

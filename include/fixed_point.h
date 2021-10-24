@@ -76,6 +76,10 @@ public:
       val(0) {
   }
 
+  constexpr fp(void* v) :
+      val(BASE(v)) {
+  }
+
   template<typename T, is_integer(T)>
   constexpr fp(const T x) :
       val(x * N) {
@@ -219,6 +223,10 @@ public:
 
   explicit constexpr operator int() const {
     return toInt();
+  }
+
+  explicit constexpr operator void*() const {
+    return (void*)val;
   }
 
   BASE val;
