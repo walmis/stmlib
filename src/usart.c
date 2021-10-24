@@ -48,8 +48,7 @@
 #define USART1_RX_DMAC          DMA_CHANNEL3
 #define USART1_TX_DMAC_NVIC     NVIC_DMA_CHANNEL2_3_IRQ
 #define USART1_RX_DMAC_NVIC     NVIC_DMA_CHANNEL2_3_IRQ
-#define USART1_DMA_RX_ISR       dma_channel2_3_isr
-#define USART1_DMA_TX_ISR       dma_channel2_3_isr
+#define USART1_DMA_TXRX_ISR       dma_channel2_3_isr
 #else
 #define USART1_DMA DMA1
 #define USART1_TX_DMAC          DMA_CHANNEL4
@@ -91,8 +90,8 @@ void usart1_isr(void) {
   usart_irq_handler(_usart1);
 }
 
-#if USART1_RX_ISR == USART1_TX_ISR
-void USART1_DMA_TX_ISR() {
+#ifdef USART1_DMA_TXRX_ISR
+void USART1_DMA_TXRX_ISR() {
   dma_tx_complete_irq_process(_usart1);
   dma_rx_irq_process(_usart1);
 }
@@ -106,8 +105,6 @@ void USART1_DMA_TX_ISR() {
   dma_tx_complete_irq_process(_usart1);
 }
 #endif
-
-
 #endif
 
 #ifdef USE_USART2
@@ -230,28 +227,36 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
 
 
 static void _rx_irq_process(struct usart_drv_s* priv) {
-  CM_ATOMIC_BLOCK()
-    {
-    uint32_t bufspace = CBUF_Space(priv->rx_buffer);
+    uint32_t irqsave = cm_mask_interrupts(true);
     uint32_t cur_idx = sizeof(priv->dma_rx_buf) - dma_get_number_of_data(priv->dma, priv->dma_rx_channel);
+    uint32_t last_idx = priv->dma_last_idx;
+    priv->dma_last_idx = cur_idx;
+    cm_mask_interrupts(irqsave);
+
+    uint32_t bufspace = CBUF_Space(priv->rx_buffer);
+
     uint32_t count;
-    if(cur_idx < priv->dma_last_idx) { /* dma pointer has wrapped */
+    if(cur_idx < last_idx) { /* dma pointer has wrapped */
       /* add number of data from current pointer to end of buffer
        * and from start to cur_idx */
-      count = sizeof(priv->dma_rx_buf) - priv->dma_last_idx + cur_idx;
+      count = sizeof(priv->dma_rx_buf) - last_idx + cur_idx;
     } else {
-      count = cur_idx - priv->dma_last_idx;
+      count = cur_idx - last_idx;
     }
     for(int i = 0; i < count; i++) {
       if(bufspace-- > 0) {
         CBUF_Push(priv->rx_buffer,
-            priv->dma_rx_buf[(priv->dma_last_idx+i) % sizeof(priv->dma_rx_buf)]);
+            priv->dma_rx_buf[(last_idx+i) % sizeof(priv->dma_rx_buf)]);
       } else {
         priv->rx_overruns++;
       }
     }
-    priv->dma_last_idx = cur_idx;
-  }
+    if(count) {
+      if(priv->rx_complete_event) {
+        priv->rx_complete_event(priv);
+      }
+    }
+
 }
 
 static void dma_rx_irq_process(struct usart_drv_s* priv) {
@@ -382,7 +387,7 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
 }
 
 void usart_poll(usart_drv* priv) {
-  _rx_irq_process(priv);
+  //_rx_irq_process(priv);
 }
 
 int usart_rx_avail(struct usart_drv_s* priv) {
@@ -394,20 +399,22 @@ int usart_tx_avail(struct usart_drv_s* priv) {
 }
 
 int usart_write(struct usart_drv_s* priv, const uint8_t* buffer, size_t n) {
-  CM_ATOMIC_BLOCK() {
 
-    if(CBUF_Space(priv->tx_buffer) < n) {
+  if(CBUF_Space(priv->tx_buffer) < n) {
+    CM_ATOMIC_BLOCK() {
       enqueue_tx_dma(priv);
-      return 0;
     }
-
-    for(int i = 0; i < n; i++) {
-      CBUF_Push(priv->tx_buffer, buffer[i]);
-    }
-
-    enqueue_tx_dma(priv);
-    return n;
+    return 0;
   }
+
+  for(int i = 0; i < n; i++) {
+    CBUF_Push(priv->tx_buffer, buffer[i]);
+  }
+  CM_ATOMIC_BLOCK() {
+    enqueue_tx_dma(priv);
+  }
+  return n;
+
 }
 
 int usart_read(struct usart_drv_s* priv, uint8_t* buffer, size_t n) {
@@ -446,7 +453,7 @@ bool usart_idle(struct usart_drv_s* priv) {
 static void usart_irq_handler(struct usart_drv_s* priv) {
   uint8_t c;
 
-  CM_ATOMIC_BLOCK() {
+  /*CM_ATOMIC_BLOCK()*/ {
 
     uint32_t sr = USART_SR(priv->usart);
     uint32_t cr1 = USART_CR1(priv->usart);
@@ -482,6 +489,7 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
   #if defined(STM32L4) || defined(GD32F1X0)
       USART_ICR(priv->usart) |= USART_ICR_IDLECF;
   #endif
+
     }
   }
 }

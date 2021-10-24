@@ -38,6 +38,8 @@ struct usart_drv_s {
     volatile uint16_t tx_dma_pending;
     volatile uint8_t idle_flag;
     uint32_t rx_overruns;
+    /* called in ISR context */
+    void (*rx_complete_event)(struct usart_drv_s* priv);
 };
 
 #define USE_USART1
