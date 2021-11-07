@@ -76,17 +76,16 @@ struct TaskQueue
   * can be called in ISR context
   */
   __attribute((noinline))
-  void* getPlacePtr(int size) {
+  void* getPlacePtr(size_t size) {
     void* placePtr = 0;
 
     CM_ATOMIC_BLOCK() {
       size_t contig = CBUF_ContigSpace((*this));
-      size_t free = CBUF_Space((*this));
       //printf("get %d\n", size);
       if(size > contig) {
         Task tsk;
         //fill last entries with dummy tasks
-        for(int i = 0; i < contig; i++) {
+        for(size_t i = 0; i < contig; i++) {
           //printf("fill\n");
           CBUF_Push((*this), tsk);
         }

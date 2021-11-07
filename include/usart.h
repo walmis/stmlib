@@ -36,8 +36,8 @@ struct usart_drv_s {
     uint8_t dma_rx_buf[USART_DMA_BUFFER_SIZE];
     volatile uint8_t dma_last_idx;
     volatile uint16_t tx_dma_pending;
-    volatile uint8_t idle_flag;
-    uint32_t rx_overruns;
+    uint16_t rx_overruns;
+    uint16_t rx_errors;
     /* called in ISR context */
     void (*rx_complete_event)(struct usart_drv_s* priv);
 };
@@ -55,7 +55,6 @@ int usart_read(usart_drv* priv, uint8_t* buffer, size_t n);
 int usart_getch(usart_drv* priv);
 int usart_putch(usart_drv* priv, char c);
 void usart_poll(usart_drv* priv);
-bool usart_idle(usart_drv* priv);
 int usart_rx_avail(usart_drv* priv);
 int usart_tx_avail(usart_drv* priv);
 

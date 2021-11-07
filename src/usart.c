@@ -193,6 +193,7 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
 
   /* Enable USART2 Receive interrupt. */
   USART_CR1(priv->usart) |= USART_CR1_IDLEIE;
+  USART_CR3(priv->usart) |= USART_CR3_EIE;
 
   switch(priv->usart) {
   case USART1:
@@ -442,24 +443,16 @@ void usart_set_rs485_den_pin(usart_drv* priv, uint32_t port, uint32_t pin) {
     gpio_clear(port, pin);
 }
 
-bool usart_idle(struct usart_drv_s* priv) {
-  int flag = priv->idle_flag;
-  if(flag) {
-    priv->idle_flag = 0;
-  }
-  return flag;
-}
-
 static void usart_irq_handler(struct usart_drv_s* priv) {
   uint8_t c;
 
   /*CM_ATOMIC_BLOCK()*/ {
 
     uint32_t sr = USART_SR(priv->usart);
-    uint32_t cr1 = USART_CR1(priv->usart);
+    //uint32_t cr1 = USART_CR1(priv->usart);
 
     /* Check if we were called because of TXC. */
-    if (((sr & USART_SR_TC) != 0)) {
+    if (sr & USART_SR_TC) {
       if(!priv->tx_dma_pending) {
         if(priv->den_pin) {
             gpio_clear(priv->den_port, priv->den_pin);
@@ -479,13 +472,26 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
       USART_ICR(priv->usart) |= USART_ICR_TCCF;
 #endif
     }
+#ifdef STM32F1
+    if (sr & (USART_SR_FE|USART_SR_NE|USART_SR_ORE)) {
+      (void)USART_DR(priv->usart);
+      priv->rx_errors++;
+      _rx_irq_process(priv);
+    }
+#else
+    if (sr & (USART_ISR_FE|USART_ISR_NF|USART_ISR_ORE)) {
+      USART_ICR(priv->usart) = USART_ICR_FECF|USART_ICR_NCF|USART_ICR_ORECF;
+      priv->rx_errors++;
+      _rx_irq_process(priv);
+    }
+#endif
 
     if (sr & USART_SR_IDLE) {
-      priv->idle_flag = 1;
+#ifdef STM32F1
+    (void)USART_DR(priv->usart);
+#endif
       _rx_irq_process(priv);
-  #ifdef STM32F1
-      (void)USART_DR(priv->usart);
-  #endif
+
   #if defined(STM32L4) || defined(GD32F1X0)
       USART_ICR(priv->usart) |= USART_ICR_IDLECF;
   #endif

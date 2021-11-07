@@ -53,7 +53,6 @@ template <int F, typename T, typename std::enable_if<std::is_integral<T>::value>
 fp<F> pow(fp<F> base, T exp) noexcept
 {
     using Fixed = fp<F>;
-    using I = int64_t;
     constexpr auto FRAC = uint32_t(1) << F;
 
     if (base == Fixed(0)) {
@@ -89,7 +88,6 @@ template <int F>
 fp<F> log2(fp<F> x) noexcept
 {
     using Fixed = fp<F>;
-    using I = int64_t;
     assert(x > Fixed(0));
 
     // Normalize input to the [1:2] domain
@@ -117,7 +115,6 @@ template <int F>
 fp<F> pow(fp<F> base, fp<F> exp) noexcept
 {
     using Fixed = fp<F>;
-    using I = int64_t;
 
     if (base == Fixed(0)) {
         assert(exp > Fixed(0));
@@ -290,7 +287,7 @@ inline void sincos_kernel (ufix31 x, fix29 *sine, fix29 *cosine)
     const uint32_t c6 = (uint32_t)(1.4444266213104129e-2 * (1LL << 32) + 0.5);
     const uint32_t c7 = (uint32_t)(3.4931597765535116e-3 * (1LL << 32) + 0.5);
     // auxiliary constants
-    const uint32_t twoopi = (uint32_t)(2/M_PI * (1LL << 32) + 0.5);
+    //const uint32_t twoopi = (uint32_t)(2/M_PI * (1LL << 32) + 0.5);
     const uint32_t half_p31 = (uint32_t)(0.5000000000000 * (1LL << 31) + 0.5);
     const uint32_t quarter_p30 = (uint32_t)(0.2500000000 * (1LL << 30) + 0.5);
     uint32_t s, q, h, l;

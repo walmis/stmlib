@@ -7,6 +7,8 @@ OBJS += \
 	$(DIR)/src/crc.o \
 	$(DIR)/src/i2cbb.o \
 	$(DIR)/src/fix32_div.o \
-	$(DIR)/src/fft.o
+	$(DIR)/src/fft.o \
+	$(DIR)/src/flash.o \
+
 	
 INCS += -I$(DIR)/include
