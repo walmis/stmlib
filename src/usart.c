@@ -30,6 +30,12 @@
 #include <libopencm3/cm3/nvic.h>
 #include <sys/param.h>
 
+#if 1
+#define DEBUG_PULSE()
+#else
+#define DEBUG_PULSE() do { gpio_set(GPIOA,GPIO15); gpio_clear(GPIOA,GPIO15); } while(0)
+#endif
+
 //compatibility
 #ifdef USART_ISR
 #define USART_SR USART_ISR
@@ -228,6 +234,8 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
 
 
 static void _rx_irq_process(struct usart_drv_s* priv) {
+  DEBUG_PULSE();
+
     uint32_t irqsave = cm_mask_interrupts(true);
     uint32_t cur_idx = sizeof(priv->dma_rx_buf) - dma_get_number_of_data(priv->dma, priv->dma_rx_channel);
     uint32_t last_idx = priv->dma_last_idx;
@@ -270,7 +278,10 @@ static void dma_rx_irq_process(struct usart_drv_s* priv) {
     _rx_irq_process(priv);
     dma_clear_interrupt_flags(priv->dma, priv->dma_rx_channel, DMA_TCIF);
   }
-
+  if (dma_get_interrupt_flag(priv->dma, priv->dma_rx_channel, DMA_TEIF)) {
+    priv->rx_errors++;
+    dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
+  }
 }
 
 static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
@@ -317,6 +328,7 @@ static void dma_rx_init(struct usart_drv_s* priv)
 
   dma_enable_transfer_complete_interrupt(priv->dma, priv->dma_rx_channel);
   dma_enable_half_transfer_interrupt(priv->dma, priv->dma_rx_channel);
+  dma_enable_transfer_error_interrupt(priv->dma, priv->dma_rx_channel);
 
   dma_enable_channel(priv->dma, priv->dma_rx_channel);
 
@@ -388,7 +400,8 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
 }
 
 void usart_poll(usart_drv* priv) {
-  //_rx_irq_process(priv);
+  CM_ATOMIC_CONTEXT();
+  _rx_irq_process(priv);
 }
 
 int usart_rx_avail(struct usart_drv_s* priv) {
@@ -445,7 +458,6 @@ void usart_set_rs485_den_pin(usart_drv* priv, uint32_t port, uint32_t pin) {
 
 static void usart_irq_handler(struct usart_drv_s* priv) {
   uint8_t c;
-
   /*CM_ATOMIC_BLOCK()*/ {
 
     uint32_t sr = USART_SR(priv->usart);
