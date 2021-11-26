@@ -40,11 +40,17 @@ extern "C" {
 #define PACKET_MAX_PL_LEN		224
 #endif
 
+#ifndef PACKET_USE_COBS
+#define PACKET_USE_COBS 1
+#pragma message "packet using COBS implementation"
+#endif
+
 // Functions
 void packet_init(void (*s_func)(unsigned char *data, unsigned int len),
 		void (*p_func)(unsigned char *data, unsigned int len), int handler_num);
 void packet_reset(int handler_num);
 void packet_process_byte(uint8_t rx_data, int handler_num);
+void packet_process_buffer(uint8_t* data, size_t len, int handler_num);
 void packet_set_key(uint16_t key, int handler_num);
 void packet_timerfunc(void);
 void packet_send_packet(unsigned char *data, unsigned int len, int handler_num);

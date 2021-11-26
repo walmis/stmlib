@@ -26,7 +26,6 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/cm3/cortex.h>
-
 #include <libopencm3/cm3/nvic.h>
 #include <sys/param.h>
 
@@ -87,6 +86,10 @@ static void dma_rx_irq_process(struct usart_drv_s* priv);
 static void dma_tx_init(struct usart_drv_s* priv);
 static void dma_rx_init(struct usart_drv_s* priv);
 static void usart_irq_handler(struct usart_drv_s* priv);
+
+static void tc_irq_enable(struct usart_drv_s* priv);
+static void tc_irq_disable(struct usart_drv_s* priv);
+static void tc_clear_flag(struct usart_drv_s* priv);
 
 
 #ifdef USE_USART1
@@ -236,36 +239,59 @@ struct usart_drv_s* usart_setup(struct usart_drv_s* priv, uint32_t usart, uint32
 static void _rx_irq_process(struct usart_drv_s* priv) {
   DEBUG_PULSE();
 
-    uint32_t irqsave = cm_mask_interrupts(true);
-    uint32_t cur_idx = sizeof(priv->dma_rx_buf) - dma_get_number_of_data(priv->dma, priv->dma_rx_channel);
-    uint32_t last_idx = priv->dma_last_idx;
-    priv->dma_last_idx = cur_idx;
-    cm_mask_interrupts(irqsave);
+  uint32_t irqsave = cm_mask_interrupts(true);
+  uint32_t cur_idx = sizeof(priv->dma_rx_buf) - dma_get_number_of_data(priv->dma, priv->dma_rx_channel);
+  uint32_t last_idx = priv->dma_last_idx;
+  priv->dma_last_idx = cur_idx;
 
-    uint32_t bufspace = CBUF_Space(priv->rx_buffer);
+  uint32_t bufspace = CBUF_Space(priv->rx_buffer);
 
-    uint32_t count;
-    if(cur_idx < last_idx) { /* dma pointer has wrapped */
-      /* add number of data from current pointer to end of buffer
-       * and from start to cur_idx */
-      count = sizeof(priv->dma_rx_buf) - last_idx + cur_idx;
+  uint32_t count;
+  if(cur_idx < last_idx) { /* dma pointer has wrapped */
+    /* add number of data from current pointer to end of buffer
+     * and from start to cur_idx */
+    count = sizeof(priv->dma_rx_buf) - last_idx + cur_idx;
+  } else {
+    count = cur_idx - last_idx;
+  }
+  if(count > sizeof(priv->dma_rx_buf)) {
+    cm_disable_interrupts();
+    while(1);
+  }
+  for(int i = 0; i < count; i++) {
+    if(bufspace-- > 0) {
+      CBUF_Push(priv->rx_buffer,
+          priv->dma_rx_buf[(last_idx+i) % sizeof(priv->dma_rx_buf)]);
     } else {
-      count = cur_idx - last_idx;
+      priv->rx_overruns++;
     }
-    for(int i = 0; i < count; i++) {
-      if(bufspace-- > 0) {
-        CBUF_Push(priv->rx_buffer,
-            priv->dma_rx_buf[(last_idx+i) % sizeof(priv->dma_rx_buf)]);
-      } else {
-        priv->rx_overruns++;
-      }
-    }
-    if(count) {
-      if(priv->rx_complete_event) {
-        priv->rx_complete_event(priv);
-      }
-    }
+  }
+  cm_mask_interrupts(irqsave);
 
+  //if(count) {
+    if(priv->rx_complete_event) {
+      priv->rx_complete_event(priv);
+    }
+  //}
+
+}
+
+static void tc_irq_enable(struct usart_drv_s* priv) {
+  USART_CR1(priv->usart) |= USART_CR1_TCIE;
+}
+static void tc_irq_disable(struct usart_drv_s* priv) {
+  USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
+}
+static void tc_clear_flag(struct usart_drv_s* priv) {
+#ifdef STM32F1
+  USART_SR(priv->usart) &= ~USART_SR_TC; //clear the TC bit
+#endif
+#if defined(STM32L4) || defined(GD32F1X0)
+  USART_ICR(priv->usart) |= USART_ICR_TCCF;
+#endif
+}
+static bool tc_get_flag(struct usart_drv_s* priv) {
+  return USART_SR(priv->usart) & USART_SR_TC;
 }
 
 static void dma_rx_irq_process(struct usart_drv_s* priv) {
@@ -280,7 +306,7 @@ static void dma_rx_irq_process(struct usart_drv_s* priv) {
   }
   if (dma_get_interrupt_flag(priv->dma, priv->dma_rx_channel, DMA_TEIF)) {
     priv->rx_errors++;
-    dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
+    dma_clear_interrupt_flags(priv->dma, priv->dma_rx_channel, DMA_TEIF);
   }
 }
 
@@ -299,10 +325,10 @@ static void dma_tx_complete_irq_process(struct usart_drv_s* priv) {
 
     }
     if (dma_get_interrupt_flag(priv->dma, priv->dma_tx_channel, DMA_TEIF)) {
-      dma_disable_channel(priv->dma, priv->dma_tx_channel);
       dma_clear_interrupt_flags(priv->dma, priv->dma_tx_channel, DMA_TEIF);
+      dma_disable_channel(priv->dma, priv->dma_tx_channel);
       priv->tx_dma_pending = 0;
-
+      enqueue_tx_dma(priv);
     }
   }
 }
@@ -351,7 +377,7 @@ static void dma_tx_init(struct usart_drv_s* priv) {
   //dma_enable_circular_mode(priv->dma, priv->dma_tx_channel);
   dma_set_peripheral_size(priv->dma, priv->dma_tx_channel, DMA_CCR_PSIZE_8BIT);
   dma_set_memory_size(priv->dma, priv->dma_tx_channel, DMA_CCR_MSIZE_8BIT);
-  dma_set_priority(priv->dma, priv->dma_tx_channel, DMA_CCR_PL_MEDIUM);
+  dma_set_priority(priv->dma, priv->dma_tx_channel, DMA_CCR_PL_HIGH);
 
   dma_enable_transfer_complete_interrupt(priv->dma, priv->dma_tx_channel);
   dma_enable_transfer_error_interrupt(priv->dma, priv->dma_tx_channel);
@@ -361,34 +387,38 @@ static void dma_tx_init(struct usart_drv_s* priv) {
 }
 
 static void enqueue_tx_dma(struct usart_drv_s* priv) {
-
+  CM_ATOMIC_CONTEXT();
+  
   if(!priv->tx_dma_pending) {
     priv->tx_dma_pending = CBUF_ContigLen(priv->tx_buffer);
+    //if no more data to send
     if(!priv->tx_dma_pending) {
-      //no more data to send
       CBUF_Init(priv->tx_buffer);
 
-      if (USART_SR(priv->usart) & USART_SR_TC) {
+      if (tc_get_flag(priv)) {
+        tc_irq_disable(priv);
+        tc_clear_flag(priv);
+
         if(priv->den_pin) {
             gpio_clear(priv->den_port, priv->den_pin);
         }
-        USART_SR(priv->usart) &= ~USART_SR_TC;
       }
 
     } else {
-      USART_SR(priv->usart) &= ~USART_SR_TC;
-      USART_CR1(priv->usart) |= USART_CR1_TCIE;
+      tc_clear_flag(priv);
+      tc_irq_enable(priv);
 
       if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
         USART_CR1(priv->usart) &= ~USART_CR1_RE; //disable receiver
       }
-
-      dma_set_number_of_data(priv->dma, priv->dma_tx_channel, priv->tx_dma_pending);
-      dma_set_memory_address(priv->dma, priv->dma_tx_channel, (uint32_t)CBUF_GetPopEntryPtr(priv->tx_buffer));
+      dma_disable_channel(priv->dma, priv->dma_tx_channel);
+      dma_set_number_of_data(priv->dma, priv->dma_tx_channel,
+          priv->tx_dma_pending);
+      dma_set_memory_address(priv->dma, priv->dma_tx_channel,
+          (uint32_t)CBUF_GetPopEntryPtr(priv->tx_buffer));
       
       if(priv->den_pin) {
         gpio_set(priv->den_port, priv->den_pin);
-
       }
 
       dma_enable_channel(priv->dma, priv->dma_tx_channel);
@@ -400,7 +430,6 @@ static void enqueue_tx_dma(struct usart_drv_s* priv) {
 }
 
 void usart_poll(usart_drv* priv) {
-  CM_ATOMIC_CONTEXT();
   _rx_irq_process(priv);
 }
 
@@ -415,18 +444,16 @@ int usart_tx_avail(struct usart_drv_s* priv) {
 int usart_write(struct usart_drv_s* priv, const uint8_t* buffer, size_t n) {
 
   if(CBUF_Space(priv->tx_buffer) < n) {
-    CM_ATOMIC_BLOCK() {
-      enqueue_tx_dma(priv);
-    }
+    enqueue_tx_dma(priv);
     return 0;
   }
 
   for(int i = 0; i < n; i++) {
     CBUF_Push(priv->tx_buffer, buffer[i]);
   }
-  CM_ATOMIC_BLOCK() {
-    enqueue_tx_dma(priv);
-  }
+  
+  enqueue_tx_dma(priv);
+  
   return n;
 
 }
@@ -440,7 +467,7 @@ int usart_read(struct usart_drv_s* priv, uint8_t* buffer, size_t n) {
 }
 
 int usart_getch(struct usart_drv_s* priv) {
-  if(!CBUF_IsEmpty(priv->rx_buffer)) {
+  if(CBUF_Len(priv->rx_buffer)>0) {
     return CBUF_Pop(priv->rx_buffer);
   }
   return -1;
@@ -461,53 +488,41 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
   /*CM_ATOMIC_BLOCK()*/ {
 
     uint32_t sr = USART_SR(priv->usart);
-    //uint32_t cr1 = USART_CR1(priv->usart);
+    (void)USART_DR(priv->usart);
 
     /* Check if we were called because of TXC. */
     if (sr & USART_SR_TC) {
+      tc_clear_flag(priv);
+      enqueue_tx_dma(priv);
+
       if(!priv->tx_dma_pending) {
         if(priv->den_pin) {
             gpio_clear(priv->den_port, priv->den_pin);
         }
         //gpio_clear(GPIOB, GPIO15);
         /* Disable the TXC interrupt, it's no longer needed. */
-        USART_CR1(priv->usart) &= ~USART_CR1_TCIE;
+        tc_irq_disable(priv);
 
         if(USART_CR3(priv->usart) & USART_CR3_HDSEL) {
           USART_CR1(priv->usart) |= USART_CR1_RE; //reenable receiver
         }
       }
-#ifdef STM32F1
-      USART_SR(priv->usart) &= ~USART_SR_TC; //clear the TC bit
-#endif
-#if defined(STM32L4) || defined(GD32F1X0)
-      USART_ICR(priv->usart) |= USART_ICR_TCCF;
-#endif
+
     }
-#ifdef STM32F1
-    if (sr & (USART_SR_FE|USART_SR_NE|USART_SR_ORE)) {
-      (void)USART_DR(priv->usart);
-      priv->rx_errors++;
-      _rx_irq_process(priv);
-    }
-#else
-    if (sr & (USART_ISR_FE|USART_ISR_NF|USART_ISR_ORE)) {
+
+    if (sr & (USART_FLAG_FE|USART_FLAG_NF|USART_FLAG_ORE)) {
+#if defined(USART_ICR)
       USART_ICR(priv->usart) = USART_ICR_FECF|USART_ICR_NCF|USART_ICR_ORECF;
+#endif
       priv->rx_errors++;
       _rx_irq_process(priv);
     }
-#endif
 
     if (sr & USART_SR_IDLE) {
-#ifdef STM32F1
-    (void)USART_DR(priv->usart);
+#if defined(USART_ICR)
+      USART_ICR(priv->usart) |= USART_ICR_IDLECF;
 #endif
       _rx_irq_process(priv);
-
-  #if defined(STM32L4) || defined(GD32F1X0)
-      USART_ICR(priv->usart) |= USART_ICR_IDLECF;
-  #endif
-
     }
   }
 }

@@ -21,6 +21,7 @@
 #define CRC_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,9 +31,9 @@ extern "C" {
  * Functions
  */
 unsigned short crc16(unsigned char *buf, unsigned int len);
-uint32_t crc32(uint32_t *buf, uint32_t len);
-void crc32_reset(void);
 
+/* CRC8_SAE_J1850 */
+uint8_t crc8(const uint8_t *buffer, size_t len);
 
 #ifdef __cplusplus
 }

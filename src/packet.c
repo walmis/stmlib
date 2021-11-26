@@ -21,6 +21,7 @@
 #include "packet.h"
 #include "crc.h"
 
+#if !PACKET_USE_COBS
 /**
  * The latest update aims at achieving optimal re-synchronization in the
  * case if lost data, at the cost of some performance.
@@ -291,3 +292,5 @@ static int try_decode_packet(unsigned char *buffer, unsigned int in_len,
 		return len + data_start + 3;
 	}
 }
+
+#endif

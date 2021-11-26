@@ -18,9 +18,9 @@ extern "C" {
 
 struct usart_buffer
 {
-       volatile uint16_t    m_get_idx;
-       volatile uint16_t    m_put_idx;
-                uint8_t     m_entry[ USART_BUFFER_SIZE ];
+        uint16_t    m_get_idx;
+        uint16_t    m_put_idx;
+        uint8_t     m_entry[ USART_BUFFER_SIZE ];
 
 };
 
