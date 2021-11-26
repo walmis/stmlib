@@ -152,10 +152,10 @@ static bool packet_validate(PACKET_STATE_t* packet)
     {
         return false;
     }
-    uint16_t crc = *(uint16_t*)(&packet->rx_buffer[frm_len]);
-    if (crc16(packet->rx_buffer, frm_len)+packet->packet_key != crc)
+    uint16_t crc = *(uint16_t*)(&packet->rx_buffer[frm_len]) ^ packet->packet_key;
+    if (crc16(packet->rx_buffer, frm_len) != crc)
     {
-        //printf("bad csum %04X %04X\n", crc, crc16(packet->rx_buffer, frm_len));
+        //printf("bad csum %04X %04X\n", crc, crc16(packet->rx_buffer, frm_len)+packet->packet_key);
         return false;
     }
     if(packet->process_func) {
@@ -323,7 +323,7 @@ void packet_send_packet(unsigned char *data, unsigned int len, int handler_num)
     {
         AddByte(data[i]);
     }
-    uint16_t checksum = crc16(data, len) + packet->packet_key;
+    uint16_t checksum = crc16(data, len) ^ packet->packet_key;
 
     AddByte(checksum&0xFF);
     AddByte(checksum>>8);
