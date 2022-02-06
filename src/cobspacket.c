@@ -17,6 +17,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 #include <string.h>
+#include <stdbool.h>
 #include "packet.h"
 #include "crc.h"
 
@@ -77,8 +78,6 @@ Example usage:
 
 */
 
-#include "crc.h"
-
 #define MSG_FOOTER_LEN 2
 
 /* COBS decoder state */
@@ -95,7 +94,7 @@ enum state
 typedef struct
 {
     volatile unsigned short rx_timeout;
-    void (*send_func)(unsigned char *data, unsigned int len);
+    bool (*send_func)(unsigned char *data, unsigned int len);
     void (*process_func)(unsigned char *data, unsigned int len);
 
     unsigned char rx_buffer[BUFFER_LEN];
@@ -266,7 +265,7 @@ void packet_process_byte(uint8_t rx_data, int handler_num)
 }
 
 
-void packet_init(void (*s_func)(unsigned char *data, unsigned int len),
+void packet_init(bool (*s_func)(unsigned char *data, unsigned int len),
                  void (*p_func)(unsigned char *data, unsigned int len), int handler_num)
 {
     memset(&m_handler_states[handler_num], 0, sizeof(PACKET_STATE_t));
@@ -308,7 +307,7 @@ void packet_reset(int handler_num)
             FinishBlock(code); \
     }
 
-void packet_send_packet(unsigned char *data, unsigned int len, int handler_num)
+bool packet_send_packet(unsigned char *data, unsigned int len, int handler_num)
 {
     PACKET_STATE_t *packet = &m_handler_states[handler_num];
 
@@ -334,11 +333,11 @@ void packet_send_packet(unsigned char *data, unsigned int len, int handler_num)
     *dst++ = 0x00; /* Append COBS frame delimiter character 0x00 */
     int32_t frame_len = dst - dst_start;
     if(packet->send_func) {
-        packet->send_func(dst_start, frame_len);
+        return packet->send_func(dst_start, frame_len);
     }
 
 error:
-  return;
+  return false;
 }
 
 /**
