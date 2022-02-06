@@ -5,8 +5,8 @@
 
 #define _MEDIAN__SORT(a,b) do { if (a > b) { std::swap(a, b); } } while (0);
 
-namespace filter
-{
+//namespace filter
+//{
 /**
  * \brief	Median filter
  *
@@ -120,6 +120,7 @@ public:
     }
 
     void reset(const T& initialValue = 0) {
+      index = 0;
       for (uint_fast8_t i = 0; i < N; ++i) {
           buffer[i] = initialValue;
           sorted[i] = initialValue;
@@ -153,4 +154,4 @@ private:
     T sorted[N];
 };
 
-}
+//}
