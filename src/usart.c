@@ -488,7 +488,9 @@ static void usart_irq_handler(struct usart_drv_s* priv) {
   /*CM_ATOMIC_BLOCK()*/ {
 
     uint32_t sr = USART_SR(priv->usart);
+#if defined(STM32F1)
     (void)USART_DR(priv->usart);
+#endif
 
     /* Check if we were called because of TXC. */
     if (sr & USART_SR_TC) {

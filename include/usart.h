@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 #ifndef USART_DMA_BUFFER_SIZE
-#define USART_DMA_BUFFER_SIZE 64
+#define USART_DMA_BUFFER_SIZE 128
 #endif
 
 struct usart_buffer
