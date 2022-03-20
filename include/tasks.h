@@ -11,6 +11,17 @@
 #include <stdint.h>
 #include <CBUF.h>
 #include <functional>
+#include "inplace_function.h"
+#include <algorithm>
+#include <iterator>
+#include <string.h>
+
+#include <libopencm3/cm3/cortex.h>
+
+
+extern uint32_t millis();
+
+using FunctionType =  modm::inplace_function<void(), sizeof(void*)*3>;
 
 class Task
 {
@@ -62,43 +73,75 @@ private:
     TTask task_;
 };
 
+class TaskQueue;
+
+class PeriodicTask {
+public:
+    PeriodicTask(int period = 0, FunctionType callback = 0) : 
+      callback(callback), period(period) {
+    }
+    ~PeriodicTask() {
+      
+    }
+    bool exec() {
+      if(is_running || !callback) return false;
+      // free running
+      if(period == 0) {
+        callback();
+      } else {
+        uint32_t ms = millis();
+        if(ms - last_run >= period) {
+          last_run = ms;
+          is_running = true;
+          callback();
+          is_running = false;
+          return true;
+        }
+      }
+
+      return false;
+    }
+    FunctionType callback;
+    uint32_t period   = 0;
+    uint32_t last_run = 0;
+    PeriodicTask* next = 0;
+    bool is_running = false;
+};
+
 struct TaskQueue
 {
-  volatile uint16_t    m_get_idx;
-  volatile uint16_t    m_put_idx;
-  Task                 m_entry[ 8 ];
+  static constexpr int maxTaskSize = 8;
+  static constexpr int taskQueueSize = 32;
+
+  uint16_t             m_get_idx;
+  uint16_t             m_put_idx;
+  void*                m_entry[ taskQueueSize ];
+  PeriodicTask*        periodic_tasks = nullptr;
+  PeriodicTask*        next_task      = nullptr;
+
+  static_assert(sizeof(void*) == sizeof(Task));
 
   TaskQueue() {
     CBUF_Init((*this));
   }
-    /*
-  * queue a single run of function
-  * can be called in ISR context
-  */
-  __attribute((noinline))
-  void* getPlacePtr(size_t size) {
-    void* placePtr = 0;
 
-    CM_ATOMIC_BLOCK() {
-      size_t contig = CBUF_ContigSpace((*this));
-      //printf("get %d\n", size);
-      if(size > contig) {
-        Task tsk;
-        //fill last entries with dummy tasks
-        for(size_t i = 0; i < contig; i++) {
-          //printf("fill\n");
-          CBUF_Push((*this), tsk);
-        }
+  bool pushTask(PeriodicTask& task) {
+    if(!periodic_tasks) {
+      periodic_tasks = &task;
+      task.next = nullptr;
+    } else {
+      PeriodicTask* t = periodic_tasks;
+      while(t->next) {
+        t = t->next;
       }
-
-      if(CBUF_ContigSpace((*this)) >= size) {
-        placePtr = CBUF_GetPushEntryPtr((*this));
-        CBUF_AdvancePushIdxBy((*this), size);
-      }
+      t->next = &task;
+      task.next = nullptr;
     }
-    return placePtr;
+    return true;
   }
 
+  bool removeTask(PeriodicTask& task);
+ 
   template<typename TTask>
   bool pushTask(TTask&& task) {
     typedef TaskBound<typename std::decay<TTask>::type> TaskBoundType;
@@ -108,24 +151,26 @@ struct TaskQueue
 
     static const std::size_t requiredQueueSize = TaskBoundType::Size;
 
-    void* placePtr = getPlacePtr(requiredQueueSize);
-    if(!placePtr) return false;
+    static_assert(
+        requiredQueueSize <= maxTaskSize,
+        "Task size too big");
 
-    //printf("place c:%d g:%d p:%d %d\n", CBUF_ContigSpace(tskq), tskq.m_get_idx, tskq.m_put_idx, CBUF_Error(tskq));
-    new (placePtr) TaskBoundType(std::forward<TTask>(task));
-    //printf("size %d\n", sizeof(TaskBoundType));
+    if(CBUF_Space((*this)) < requiredQueueSize) {
+      return false;
+    }
+
+    Task data[requiredQueueSize];
+    new (data) TaskBoundType(std::forward<TTask>(task));
+    CM_ATOMIC_BLOCK() {
+      for(size_t i = 0; i < requiredQueueSize; i++) {
+        CBUF_Push((*this), *(void**)&data[i]);
+      }
+    }
 
     return true;
   }
 
-  void runTask() {
-    if(!CBUF_IsEmpty((*this))) {
-      auto ptr = CBUF_GetPopEntryPtr((*this));
-      int size = ptr->size();
-      ptr->exec();
-      CBUF_AdvancePopIdxBy((*this), size);
-    }
-  }
+  void runTask();
 };
 
 
