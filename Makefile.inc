@@ -10,6 +10,7 @@ OBJS += \
 	$(DIR)/src/fix32_div.o \
 	$(DIR)/src/fft.o \
 	$(DIR)/src/flash.o \
+	$(DIR)/src/tasks.o \
 
 	
 INCS += -I$(DIR)/include
